@@ -1,11 +1,13 @@
 # GV309 Week 9 – Four questions, opened one at a time
 
 Students work in groups. Each question has its own page. You open the questions one at a
-time from the instructor page, separately for seminar 3 and seminar 4.
+time from the instructor page, separately for each seminar (1, 2, 3 and 4). Students can
+also send you questions, with their group's name or anonymously, and you answer them on
+the instructor page.
 
 ## How the session runs
 
-1. One student creates the group (seminar 3 or 4 and everyone's names). The site shows a
+1. One student creates the group (seminar 1, 2, 3 or 4 and everyone's names). The site shows a
    six-digit code, which the others use to join on their own devices. Until you open a
    question, students see a waiting page.
 2. You open a question on the instructor page. Students who are waiting are taken to it
@@ -16,6 +18,34 @@ time from the instructor page, separately for seminar 3 and seminar 4.
 4. Everyone in a group can type in the same box at the same time. Answers save as they
    type. Pasting is blocked (see below).
 
+## Questions to the instructor
+
+Students press **Ask the instructor** in the bar at the top of any page. A panel opens where
+they pick what the question is about, type it, and press either **Send with our group's
+name** or **Send anonymously**. Everyone in the group sees the group's questions and your
+answers. A group can withdraw a question until you answer it.
+
+On the instructor page, **Questions from students** lists the questions for the seminar you
+are viewing, unanswered ones first. The seminar tabs show how many questions are waiting,
+and so does the browser tab title, so you notice new ones while looking at something else.
+For each question you can:
+
+- **Send to [group] only**: the answer goes to the group that asked. This works for
+  anonymous questions too; you never see which group it was.
+- **Send to all of seminar N**: every group in that seminar sees the question and answer,
+  with the asking group's name, or "asked anonymously".
+- **Mark as answered in class**, if you answered it aloud.
+- Edit an answer, switch it between the group and the whole seminar, or delete the question.
+
+Students get a notice when an answer arrives. Anything you are typing is kept when new
+questions come in. **Export student questions (CSV)** downloads all questions and answers.
+
+About anonymity: the instructor page and the CSV never show which group sent an anonymous
+question. The server still stores that link in its data file, because it needs it to send
+your answer back to the right group.
+
+## The table in question 1
+
 **Question 1** is a table: one row per audience and one column per criterion. Each inner
 cell is its own box. The cell for the ideal audience's coordination says "Not applicable"
 and cannot be edited, as in the Word document, so there are 11 boxes to fill. On phones the
@@ -25,7 +55,8 @@ table turns into one card per audience, with the full column heading above each 
 
 Go to `/instructor` and log in with the password you set (see deployment).
 
-- Tabs for seminar 3 and 4. Each seminar has its own question settings and timer.
+- Tabs for seminars 1 to 4. Each seminar has its own question settings, timer and student
+  questions. A number on a tab shows unanswered questions in that seminar.
 - Each question has three settings:
   - **Hidden**: students cannot see it. This is the setting for every question at the start.
   - **Open**: students can see it and write.
@@ -44,16 +75,18 @@ Go to `/instructor` and log in with the password you set (see deployment).
     each cell; for the other questions, every group's answer under each part. This view
     works well for the discussion afterwards.
   The view does not redraw while you are selecting text, so you can copy from it.
-- **Export CSV** downloads everything for both seminars (opens in Excel), one row per group
-  and one column per cell or part.
-- **Delete all data** clears both seminars and hides all questions again.
+- **Export answers (CSV)** downloads everything for all seminars (opens in Excel), one row
+  per group and one column per cell or part.
+- **Delete all data** clears all seminars, including student questions, and hides all
+  questions again.
 
 Students can press **Download our answers** at any time to save their group's work as a web
 page (it opens in any browser and in Word).
 
 ## Changing the content
 
-Edit `content.json`. Each question has an `id`, a `title` (shown in the tabs once the
+Edit `content.json`. The `seminars` list sets which seminar groups students can choose.
+Each question has an `id`, a `title` (shown in the tabs once the
 question is open) and either a `table` or a list of `parts`. Optional fields: `prompt`
 (paragraphs above the answer boxes), `legend` (the numbered list of commitments in
 question 1), `quote`, `minutes` (adds a timer button) and `wordLimit` (shows a word count
@@ -78,7 +111,7 @@ their answers from that box.
    followed by `/instructor`.
 
 Data is saved in `data-week9.json` on the server. Free Render instances can lose this file
-when they restart or redeploy, so export the CSV at the end of each seminar. A free instance
+when they restart or redeploy, so export both CSV files at the end of each seminar. A free instance
 also sleeps when unused; open the site a few minutes before class to wake it. After a
 restart you need to log in to the instructor page again.
 

@@ -5,6 +5,7 @@
   let meta = null, content = null, ws = null, token = null, view = null, answers = {};
   let seminar = null, aq = null, mode = 'group', timeOffset = 0, errTimer = null;
   let tableHtmlCache = '', answersHtmlCache = '', pendingAnswers = false;
+  const askDrafts = {}, askEditing = new Set(), askSig = {};
 
   function showError(msg) {
     const el = $('error'); el.textContent = msg; el.hidden = false;
@@ -85,11 +86,16 @@
         <div class="tabs" role="tablist" style="margin:0">${content.seminars.map(s => `<button type="button" role="tab" data-s="${esc(s)}" aria-selected="${s === seminar}">Seminar ${esc(s)}</button>`).join('')}</div>
         <div class="row">
           <a class="btn quiet small" href="/" target="_blank" rel="noopener">Open student page</a>
-          <button class="btn quiet small" id="csv" type="button">Export CSV (both seminars)</button>
+          <button class="btn quiet small" id="csv" type="button">Export answers (CSV)</button>
+          <button class="btn quiet small" id="csvq" type="button">Export student questions (CSV)</button>
           <button class="btn danger small" id="reset" type="button">Delete all data</button>
         </div>
       </div>
       <section class="panel controls" id="controls"></section>
+      <section class="panel" id="askpanel">
+        <div class="row" style="justify-content:space-between;align-items:baseline"><h2>Questions from students</h2><span class="hint" id="asksummary" style="margin:0"></span></div>
+        <div id="asklist"></div>
+      </section>
       <section class="panel">
         <div class="row" style="justify-content:space-between;align-items:baseline"><h2>Groups</h2><span class="hint" id="gsummary" style="margin:0"></span></div>
         <div class="tablewrap" id="table"></div>
@@ -105,8 +111,10 @@
       <div id="answers"></div>`;
     document.querySelectorAll('.tabs button').forEach(b => b.onclick = () => { seminar = b.dataset.s; buildShell(); });
     $('csv').onclick = () => { location.href = '/export.csv?token=' + encodeURIComponent(token); };
+    $('csvq').onclick = () => { location.href = '/export-questions.csv?token=' + encodeURIComponent(token); };
+    for (const k of Object.keys(askSig)) delete askSig[k];
     $('reset').onclick = () => {
-      if (!confirm('Delete every group and every answer in both seminars, and hide all questions again? This cannot be undone. Export the CSV first if you need it.')) return;
+      if (!confirm('Delete every group, every answer and every student question in all seminars, and hide all questions again? This cannot be undone. Export the CSV files first if you need them.')) return;
       if (!confirm('Really delete everything?')) return;
       send({ type: 'resetAll' });
     };
@@ -176,6 +184,16 @@
     const sem = view.seminars[seminar];
     const groups = semGroups();
 
+    // Unanswered student questions: badges on the seminar tabs and a count in the browser tab
+    const waiting = s => view.asks.filter(a => a.seminar === s && !a.answer).length;
+    document.querySelectorAll('.tabs button[data-s]').forEach(b => {
+      const n = waiting(b.dataset.s);
+      b.innerHTML = `Seminar ${esc(b.dataset.s)}${n ? ` <span class="badge" title="${n} unanswered question${n === 1 ? '' : 's'}">${n}</span>` : ''}`;
+    });
+    const totalWaiting = view.asks.filter(a => !a.answer).length;
+    document.title = (totalWaiting ? `(${totalWaiting}) ` : '') + 'Instructor – ' + content.title;
+    renderAsks();
+
     // Question controls
     for (const q of content.questions) {
       const st = sem.status[q.id];
@@ -226,6 +244,89 @@
     document.querySelectorAll('#aqbtns button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.q === aq)));
     document.querySelectorAll('#modebtns button').forEach(b => b.setAttribute('aria-pressed', String(b.dataset.m === mode)));
     renderAnswers();
+  }
+
+  // ------------------------------------------------------------ student questions
+  // Each question is its own element, replaced only when that question changes,
+  // so a reply you are typing is not disturbed when another question arrives.
+  const hhmm = ts => new Date(ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+  function askItemHtml(a) {
+    const qi = qIndex(a.about);
+    const from = a.anonymous ? '<strong>Anonymous</strong>' : `<strong>${esc(a.from.name)}</strong> (${esc((a.from.members || []).join(', '))})`;
+    const target = a.anonymous ? 'the group that asked' : esc(a.from.name);
+    let h = `<p class="askmeta">${from} <span class="hint">about ${qi >= 0 ? `question ${qi + 1}` : 'something else'}, ${hhmm(a.createdAt)}</span></p>
+      <p class="asktext">${esc(a.text)}</p>`;
+    if (!a.answer || askEditing.has(a.id)) {
+      const draft = askDrafts[a.id] != null ? askDrafts[a.id] : (a.answer && !a.answer.inClass ? a.answer.text : '');
+      h += `<textarea data-draft aria-label="Your answer" placeholder="Your answer">${esc(draft)}</textarea>
+        ${a.askerGone ? `<p class="hint" style="margin:6px 0 0">The group that asked has been deleted, so only an answer to the whole seminar will be read.</p>` : ''}
+        <div class="row">
+          <button class="btn small" type="button" data-act="private">Send to ${target} only</button>
+          <button class="btn quiet small" type="button" data-act="shared">Send to all of seminar ${esc(a.seminar)}</button>
+          ${a.answer ? '<button class="btn quiet small" type="button" data-act="cancel">Cancel</button>' : '<button class="btn quiet small" type="button" data-act="inclass">Mark as answered in class</button>'}
+          <button class="btn danger small" type="button" data-act="delete">Delete</button>
+        </div>`;
+    } else if (a.answer.inClass) {
+      h += `<p class="answered">Marked as answered in class at ${hhmm(a.answer.at)}.</p>
+        <div class="row"><button class="btn quiet small" type="button" data-act="edit">Write an answer</button><button class="btn danger small" type="button" data-act="delete">Delete</button></div>`;
+    } else {
+      h += `<div class="note"><p class="who">Your answer, ${a.shared ? `sent to all of seminar ${esc(a.seminar)}` : `sent to ${target} only`}, ${hhmm(a.answer.at)}</p><div class="body">${esc(a.answer.text)}</div></div>
+        <div class="row">
+          <button class="btn quiet small" type="button" data-act="edit">Edit answer</button>
+          <button class="btn quiet small" type="button" data-act="${a.shared ? 'unshare' : 'share'}">${a.shared ? `Show only to ${target}` : `Share with all of seminar ${esc(a.seminar)}`}</button>
+          <button class="btn danger small" type="button" data-act="delete">Delete</button>
+        </div>`;
+    }
+    return h;
+  }
+  function wireAsk(el, a) {
+    const ta = el.querySelector('textarea');
+    if (ta) ta.oninput = () => { askDrafts[a.id] = ta.value; };
+    el.querySelectorAll('[data-act]').forEach(b => b.onclick = () => {
+      const act = b.dataset.act;
+      if (act === 'private' || act === 'shared') {
+        if (!ta.value.trim()) { showError('Write an answer first.'); ta.focus(); return; }
+        send({ type: 'answerAsk', id: a.id, text: ta.value, shared: act === 'shared' });
+        delete askDrafts[a.id]; askEditing.delete(a.id);
+      } else if (act === 'inclass') { send({ type: 'inClassAsk', id: a.id }); delete askDrafts[a.id]; }
+      else if (act === 'edit') { askEditing.add(a.id); renderAsks(); const t = $('asklist').querySelector(`[data-id="${a.id}"] textarea`); if (t) t.focus(); }
+      else if (act === 'cancel') { askEditing.delete(a.id); delete askDrafts[a.id]; renderAsks(); }
+      else if (act === 'share' || act === 'unshare') send({ type: 'shareAsk', id: a.id, shared: act === 'share' });
+      else if (act === 'delete') {
+        if (confirm('Delete this question? The students who asked it will no longer see it or your answer.')) { send({ type: 'deleteAsk', id: a.id }); delete askDrafts[a.id]; askEditing.delete(a.id); }
+      }
+    });
+  }
+  function renderAsks() {
+    const box = $('asklist'); if (!box) return;
+    const list = view.asks.filter(a => a.seminar === seminar);
+    const open = list.filter(a => !a.answer);
+    const done = list.filter(a => a.answer).sort((x, y) => y.answer.at - x.answer.at);
+    $('asksummary').textContent = open.length ? `${open.length} waiting for an answer` : (list.length ? 'All answered' : '');
+    if (!list.length) {
+      box.innerHTML = '<p class="hint" style="margin:0">No questions yet. Students can ask from any page, with their group’s name or anonymously. Anonymous questions show no group here or in the CSV.</p>';
+      for (const k of Object.keys(askSig)) delete askSig[k];
+      return;
+    }
+    const ordered = [...open, ...done];
+    const want = new Set(ordered.map(a => a.id));
+    [...box.children].forEach(el => { if (!el.dataset.id || !want.has(el.dataset.id)) { delete askSig[el.dataset.id]; el.remove(); } });
+    let prev = null;
+    for (const a of ordered) {
+      const sig = JSON.stringify([a, askEditing.has(a.id)]);
+      let el = box.querySelector(`[data-id="${a.id}"]`);
+      if (!el || askSig[a.id] !== sig) {
+        const fresh = document.createElement('article');
+        fresh.className = 'askI ' + (a.answer && !askEditing.has(a.id) ? 'done' : 'open');
+        fresh.dataset.id = a.id;
+        fresh.innerHTML = askItemHtml(a);
+        wireAsk(fresh, a);
+        if (el) el.replaceWith(fresh);
+        el = fresh; askSig[a.id] = sig;
+      }
+      if (prev ? prev.nextElementSibling !== el : box.firstElementChild !== el) { if (prev) prev.after(el); else box.prepend(el); }
+      prev = el;
+    }
   }
 
   function cellText(s) { return s.trim() ? esc(s) : '<span class="none" aria-label="Empty">–</span>'; }

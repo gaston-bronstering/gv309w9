@@ -18,6 +18,17 @@
   <div id="error" class="error" hidden role="alert"></div>
   <main id="main"><p class="hint">Loading…</p></main>
 </div>
+<aside id="askpanel" class="askpanel" role="dialog" aria-labelledby="asktitle" hidden>
+  <div class="askhead"><h2 id="asktitle">Ask your instructor</h2><button type="button" class="btn quiet small" id="askclose">Close</button></div>
+  <div class="askbody">
+    <label class="field"><span>About</span><select id="askabout"></select></label>
+    <label class="field"><span>Your question</span><textarea id="asktext" maxlength="1000" rows="4"></textarea></label>
+    <p class="hint">Choose whether your instructor sees your group’s name. Everyone in your group sees the question and the answer either way.</p>
+    <div class="row"><button class="btn" type="button" id="asknamed">Send with our group’s name</button><button class="btn quiet" type="button" id="askanon">Send anonymously</button></div>
+    <p class="askstatus" id="askstatus" aria-live="polite"></p>
+    <div id="asklist"></div>
+  </div>
+</aside>
 <div id="toast" class="floattoast" role="status" aria-live="polite" hidden></div>
 <script src="/vendor/yjs.js"></script>
 <script src="/collab.js"></script>

@@ -41,7 +41,7 @@ const FIELDS = Object.fromEntries(QUESTIONS.map(q => [q.id, fieldsOf(q)]));
 }
 
 // ---------------------------------------------------------------- state
-let state = { seminars: {}, groups: {}, seq: {} };
+let state = { seminars: {}, groups: {}, seq: {}, asks: {} };
 const docs = {}; // groupId -> { [questionId]: Y.Doc }
 
 function freshSeminar() { return { status: Object.fromEntries(QIDS.map(q => [q, 'hidden'])), timerEndsAt: null }; }
@@ -67,6 +67,7 @@ function load() {
     const raw = JSON.parse(fs.readFileSync(DATA_FILE, 'utf8'));
     state.groups = raw.groups || {};
     state.seq = raw.seq || {};
+    state.asks = raw.asks || {};
     for (const s of content.seminars) {
       const old = (raw.seminars || {})[s] || {};
       const sem = freshSeminar();
@@ -85,7 +86,7 @@ function scheduleSave() {
   saveTimer = setTimeout(() => { saveTimer = null; saveNow(); }, 1000);
 }
 function saveNow() {
-  const out = { seminars: state.seminars, groups: state.groups, seq: state.seq, docs: {} };
+  const out = { seminars: state.seminars, groups: state.groups, seq: state.seq, asks: state.asks, docs: {} };
   for (const [id, d] of Object.entries(docs)) out.docs[id] = Object.fromEntries(QIDS.map(q => [q, b64(Y.encodeStateAsUpdate(d[q]))]));
   const tmp = DATA_FILE + '.tmp';
   try { fs.writeFileSync(tmp, JSON.stringify(out)); fs.renameSync(tmp, DATA_FILE); }
@@ -115,6 +116,26 @@ function questionsFor(seminar) {
     : Object.assign({}, q, { n: i + 1, status: st[q.id] }));
 }
 
+// ---------------------------------------------------------------- questions to the instructor
+// An anonymous question keeps the id of the group that asked it, so that the
+// answer can reach that group, but the instructor page and the CSV never show it.
+const ASK_MAX = 1000, ASK_OPEN_PER_GROUP = 15;
+const sortedAsks = () => Object.values(state.asks).sort((a, b) => a.createdAt - b.createdAt);
+function askForGroup(a) {
+  return { id: a.id, text: a.text, anonymous: a.anonymous, about: a.about, createdAt: a.createdAt, answer: a.answer, shared: a.shared };
+}
+function askShared(a) {
+  return { id: a.id, text: a.text, from: a.anonymous ? null : a.askerName, about: a.about, createdAt: a.createdAt, answer: a.answer };
+}
+function askForAdmin(a) {
+  const g = state.groups[a.groupId];
+  return {
+    id: a.id, seminar: a.seminar, anonymous: a.anonymous, about: a.about, text: a.text, createdAt: a.createdAt,
+    answer: a.answer, shared: a.shared, askerGone: !g,
+    from: a.anonymous ? null : { name: a.askerName, members: g ? g.members : a.askerMembers }
+  };
+}
+
 function groupView(g) {
   const sem = state.seminars[g.seminar];
   return {
@@ -122,7 +143,11 @@ function groupView(g) {
     timerEndsAt: sem.timerEndsAt,
     serverNow: Date.now(),
     questions: questionsFor(g.seminar),
-    here: pagesOf(g.id)
+    here: pagesOf(g.id),
+    asks: {
+      own: sortedAsks().filter(a => a.groupId === g.id).map(askForGroup),
+      shared: sortedAsks().filter(a => a.seminar === g.seminar && a.shared && a.answer && a.groupId !== g.id).map(askShared)
+    }
   };
 }
 
@@ -167,6 +192,22 @@ app.get('/export.csv', (req, res) => {
   res.send('\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n'));
 });
 
+app.get('/export-questions.csv', (req, res) => {
+  if (!adminTokens.has(req.query.token)) return res.status(401).send('Log in on the instructor page first.');
+  const rows = [['seminar', 'asked at', 'from', 'about', 'question', 'answer', 'answered at', 'answer went to']];
+  for (const a of sortedAsks().sort((x, y) => x.seminar.localeCompare(y.seminar) || x.createdAt - y.createdAt)) {
+    const qi = QIDS.indexOf(a.about);
+    const ans = a.answer;
+    rows.push([a.seminar, new Date(a.createdAt).toISOString(), a.anonymous ? 'Anonymous' : `${a.askerName} (${(a.askerMembers || []).join('; ')})`,
+      qi >= 0 ? `Question ${qi + 1}` : 'General', a.text,
+      ans ? (ans.inClass ? '[answered in class]' : ans.text) : '', ans ? new Date(ans.at).toISOString() : '',
+      ans ? (ans.inClass ? 'class' : (a.shared ? `all of seminar ${a.seminar}` : 'the group that asked')) : '']);
+  }
+  res.setHeader('Content-Type', 'text/csv; charset=utf-8');
+  res.setHeader('Content-Disposition', 'attachment; filename="gv309-week9-student-questions.csv"');
+  res.send('\uFEFF' + rows.map(r => r.map(csvCell).join(',')).join('\r\n'));
+});
+
 const server = http.createServer(app);
 const wss = new WebSocketServer({ server, maxPayload: 4 * 1024 * 1024 });
 
@@ -205,7 +246,7 @@ function adminGroups() {
 }
 function adminMessage(full) {
   const ids = full ? Object.keys(state.groups) : [...dirty].filter(id => state.groups[id]);
-  return { type: 'admin', full, view: { seminars: state.seminars, groups: adminGroups(), serverNow: Date.now() }, answers: Object.fromEntries(ids.map(id => [id, answersOf(id)])) };
+  return { type: 'admin', full, view: { seminars: state.seminars, groups: adminGroups(), asks: sortedAsks().map(askForAdmin), serverNow: Date.now() }, answers: Object.fromEntries(ids.map(id => [id, answersOf(id)])) };
 }
 let adminTimer = null;
 function scheduleAdmin() {
@@ -263,6 +304,28 @@ function handleStudent(ws, m) {
       if (ws.page !== p) { ws.page = p; pushAll(); }
       return;
     }
+    case 'ask': {
+      const text = String(m.text || '').trim().slice(0, ASK_MAX);
+      if (!text) return send(ws, { type: 'error', msg: 'Type your question first.' });
+      if (Object.values(state.asks).filter(a => a.groupId === g.id && !a.answer).length >= ASK_OPEN_PER_GROUP) {
+        return send(ws, { type: 'error', msg: 'Your group has many unanswered questions. Wait for an answer, or withdraw one, before asking another.' });
+      }
+      const id = crypto.randomUUID();
+      state.asks[id] = {
+        id, seminar: g.seminar, groupId: g.id, askerName: groupName(g), askerMembers: g.members.slice(),
+        anonymous: !!m.anonymous, about: QIDS.includes(m.about) ? m.about : null,
+        text, createdAt: Date.now(), answer: null, shared: false
+      };
+      send(ws, { type: 'asked' });
+      scheduleSave(); return pushAll();
+    }
+    case 'withdrawAsk': {
+      const a = state.asks[m.id];
+      if (!a || a.groupId !== g.id) return;
+      if (a.answer) return send(ws, { type: 'error', msg: 'Your instructor has already answered this question, so it cannot be withdrawn.' });
+      delete state.asks[a.id];
+      scheduleSave(); return pushAll();
+    }
     case 'yupdate': {
       const qid = m.doc;
       if (!QIDS.includes(qid)) return;
@@ -291,6 +354,29 @@ function handleAdmin(ws, m) {
       const min = Number(m.minutes);
       sem.timerEndsAt = (min > 0 && min <= 240) ? Date.now() + Math.round(min * 60000) : null; break;
     }
+    case 'answerAsk': {
+      const a = state.asks[m.id];
+      if (!a) return;
+      const text = String(m.text || '').trim().slice(0, 4000);
+      if (!text) return send(ws, { type: 'error', msg: 'Write an answer first.' });
+      a.answer = { text, at: Date.now(), inClass: false };
+      a.shared = !!m.shared; break;
+    }
+    case 'inClassAsk': {
+      const a = state.asks[m.id];
+      if (!a) return;
+      a.answer = { text: '', at: Date.now(), inClass: true };
+      a.shared = false; break;
+    }
+    case 'shareAsk': {
+      const a = state.asks[m.id];
+      if (!a || !a.answer || a.answer.inClass) return;
+      a.shared = !!m.shared; break;
+    }
+    case 'deleteAsk': {
+      if (!state.asks[m.id]) return;
+      delete state.asks[m.id]; break;
+    }
     case 'deleteGroup': {
       const g = state.groups[m.groupId];
       if (!g) return;
@@ -299,7 +385,7 @@ function handleAdmin(ws, m) {
     }
     case 'resetAll': {
       for (const id of Object.keys(state.groups)) delete docs[id];
-      state.groups = {}; state.seq = {};
+      state.groups = {}; state.seq = {}; state.asks = {};
       for (const s of content.seminars) state.seminars[s] = freshSeminar();
       break;
     }
@@ -322,7 +408,7 @@ wss.on('connection', ws => {
       return send(ws, adminMessage(true));
     }
     if (m.type === 'ping') return send(ws, { type: 'pong' });
-    if (ws.isAdmin && m.type in { setStatus: 1, timer: 1, deleteGroup: 1, resetAll: 1 }) return handleAdmin(ws, m);
+    if (ws.isAdmin && m.type in { setStatus: 1, timer: 1, deleteGroup: 1, resetAll: 1, answerAsk: 1, inClassAsk: 1, shareAsk: 1, deleteAsk: 1 }) return handleAdmin(ws, m);
     handleStudent(ws, m);
   });
   ws.on('close', () => { if (ws.groupId) pushAll(); });

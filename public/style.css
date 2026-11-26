@@ -65,7 +65,7 @@ input[type=text], input[type=password], input[type=number], select {
 }
 .semchoice { border: 0; padding: 0; margin: 0 0 14px; min-width: 0; }
 .semchoice legend { font-weight: 600; padding: 0; margin-bottom: 6px; }
-.semopts { display: grid; grid-template-columns: repeat(auto-fit, minmax(0, 1fr)); gap: 10px; max-width: 420px; }
+.semopts { display: grid; grid-template-columns: repeat(auto-fit, minmax(128px, 1fr)); gap: 10px; max-width: 580px; }
 .semopt { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border: 1px solid var(--rule); border-radius: var(--radius); background: #fff; cursor: pointer; font-weight: 500; }
 .semopt:hover { border-color: var(--action); }
 .semopt input { width: 18px; height: 18px; margin: 0; accent-color: var(--ink); flex: none; }
@@ -259,4 +259,41 @@ ul.plain { margin: 0; padding-left: 1.2em; font: 1rem/1.6 var(--serif); }
   .celllabel .short { display: none; }
   .celllabel .full { display: block; }
   table.answers.readonly .celllabel { display: block; }
+}
+
+/* ---------------------------------------------------------------- Questions to the instructor */
+/* The instructor's voice is purple throughout, as for peer feedback last week */
+.badge { display: inline-block; margin-left: 6px; padding: 0 7px; border-radius: 999px; background: var(--note); color: #fff; font-size: .78rem; font-weight: 600; line-height: 1.5; vertical-align: 1px; font-variant-numeric: tabular-nums; }
+.banner.answer { border-color: var(--note); }
+.banner.answer .btn { background: var(--note); border-color: var(--note); }
+
+.askpanel { position: fixed; top: 0; right: 0; bottom: 0; z-index: 30; width: min(440px, 100%); display: flex; flex-direction: column; background: var(--surface); border-left: 1px solid var(--rule); box-shadow: -10px 0 32px rgba(22, 33, 58, .16); }
+.askpanel[hidden] { display: none; }
+.askhead { display: flex; justify-content: space-between; align-items: center; gap: 12px; padding: 14px 20px; border-bottom: 1px solid var(--rule); border-top: 4px solid var(--note); }
+.askhead h2 { font: 600 1.1rem/1.3 var(--sans); margin: 0; }
+.askbody { flex: 1; overflow-y: auto; padding: 18px 20px 48px; }
+.askbody select { max-width: 100%; }
+.askbody textarea, .askI textarea { display: block; width: 100%; min-height: 110px; resize: vertical; padding: 10px 12px; border: 1px solid var(--rule); border-radius: var(--radius); font: 1rem/1.55 var(--serif); background: #fff; }
+.askbody textarea:focus, .askI textarea:focus { border-color: var(--note); }
+.askbody h3 { font: 600 1rem/1.3 var(--sans); margin: 28px 0 4px; }
+.askstatus { min-height: 1.4em; margin: 10px 0 0; font-size: .92rem; }
+.askstatus.ok { color: var(--ok); }
+.askstatus.pending { color: var(--warn); }
+article.ask { padding: 14px 0; border-top: 1px solid var(--rule); }
+article.ask .note { margin-top: 10px; }
+.askmeta { margin: 0 0 4px; font-size: .86rem; color: var(--muted); }
+.asktext { margin: 0; font: 1rem/1.55 var(--serif); white-space: pre-wrap; max-width: 75ch; }
+.askwait { margin: 8px 0 0; font-size: .9rem; color: #8A5A00; }
+
+/* Instructor list: unanswered questions carry a purple rule */
+.askI { padding: 14px 0 16px 16px; border-top: 1px solid var(--rule); border-left: 4px solid transparent; }
+.askI:first-child { border-top: 0; }
+.askI.open { border-left-color: var(--note); }
+.askI .askmeta { color: var(--ink); }
+.askI textarea { margin-top: 12px; min-height: 90px; }
+.askI .row { margin-top: 10px; }
+.askI .note { margin-top: 12px; max-width: 75ch; }
+.answered { margin: 10px 0 0; color: var(--muted); font-style: italic; }
+@media (max-width: 760px) {
+  .askpanel { width: 100%; border-left: 0; }
 }

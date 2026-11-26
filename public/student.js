@@ -6,7 +6,8 @@
   let view = null, groupId = null, code = null;
   let ydocs = {}, docGen = {}, docsReady = false;
   let unbinds = [], layoutKey = null, navHtml = '', timeOffset = 0, errTimer = null, toastTimer = null;
-  let prevStatus = null, bannerFor = null, lastPage, wideLayout = false;
+  let prevStatus = null, bannerFor = null, lastPage, wideLayout = false, barHtml = '';
+  let askOpen = false, seenAnswers = null, dismissedAnswers = new Set(), freshAnswers = new Set(), askListCache = '', askAboutKey = '', askPending = false;
 
   // ------------------------------------------------------------ connection
   function send(m) { if (ws && ws.readyState === 1) ws.send(JSON.stringify(m)); }
@@ -26,7 +27,7 @@
       const m = JSON.parse(e.data);
       switch (m.type) {
         case 'joined':
-          if (groupId !== m.groupId) { ydocs = {}; docsReady = false; prevStatus = null; bannerFor = null; layoutKey = null; view = null; }
+          if (groupId !== m.groupId) { ydocs = {}; docsReady = false; prevStatus = null; bannerFor = null; layoutKey = null; view = null; seenAnswers = null; dismissedAnswers = new Set(); askListCache = ''; askAboutKey = ''; }
           groupId = m.groupId; code = m.code; lastPage = undefined;
           $('error').hidden = true;
           try { localStorage.setItem(STORE, JSON.stringify({ groupId, code })); } catch (er) { /* ignore */ }
@@ -40,12 +41,20 @@
         case 'view': onView(m.view); break;
         case 'removed':
           forget(); showError('Your group was removed by the instructor. Create or join a group again.'); render(); break;
-        case 'error': showError(m.msg); break;
+        case 'asked':
+          askPending = false; $('asktext').value = '';
+          askStatus('Sent. The answer appears below when your instructor replies.', 'ok'); setAskButtons(); break;
+        case 'error':
+          if (askOpen && askPending) { askPending = false; setAskButtons(); askStatus(m.msg, 'pending'); }
+          else showError(m.msg);
+          break;
       }
     };
   }
   function forget() {
+    closeAsk(false);
     groupId = null; code = null; view = null; ydocs = {}; docsReady = false; layoutKey = null; prevStatus = null; bannerFor = null;
+    seenAnswers = null; dismissedAnswers = new Set(); freshAnswers = new Set(); askListCache = ''; askAboutKey = '';
     try { localStorage.removeItem(STORE); } catch (e) { /* ignore */ }
   }
 
@@ -121,18 +130,24 @@
   // ------------------------------------------------------------ group bar
   function renderBar() {
     const bar = $('groupbar');
-    if (!view || !groupId) { bar.hidden = true; return; }
+    if (!view || !groupId) { bar.hidden = true; barHtml = ''; return; }
     const g = view.group;
     bar.hidden = false;
-    bar.innerHTML = `<div class="wrap ${wideLayout ? 'wide' : ''}">
+    const unseen = unseenAnswers().length;
+    const html = `<div class="wrap ${wideLayout ? 'wide' : ''}">
       <strong>${esc(g.name)}</strong>
       <span class="members">${esc(g.members.join(', '))}</span>
       <span class="code">Code to join: <strong>${esc(g.code)}</strong></span>
       ${connected ? '' : '<span class="conn" role="status">Reconnecting. What you type is kept and sent when the connection returns.</span>'}
       <span class="spacer"></span>
       <span id="timer" class="timer" hidden></span>
-      <button type="button" id="dl">Download our answers</button>
+      <button type="button" id="askbtn" aria-expanded="${askOpen}" aria-controls="askpanel">Ask the instructor${unseen ? ` <span class="badge">${unseen} new</span>` : ''}</button>
+      <button type="button" id="dl">Download answers</button>
       <button type="button" id="leave">Leave group</button></div>`;
+    if (html === barHtml) { tick(); return; }
+    barHtml = html;
+    bar.innerHTML = html;
+    $('askbtn').onclick = () => (askOpen ? closeAsk(true) : openAsk());
     $('dl').onclick = download;
     $('leave').onclick = () => {
       if (!confirm('Leave this group on this device? Your group’s work stays saved, and you can rejoin with code ' + g.code + '.')) return;
@@ -167,19 +182,128 @@
     }).join('')}</ol>`;
     if (html !== navHtml) { nav.innerHTML = html; navHtml = html; }
   }
+  // One notice at a time: a newly opened question first, then a new answer from the instructor.
   function renderBanner() {
     const el = $('banner');
     const q = bannerFor && qById(bannerFor);
-    const show = !!q && q.id !== hashPage();
+    const showQ = !!q && q.id !== hashPage();
+    const pendingA = (!showQ && view && !askOpen) ? unseenAnswers().filter(k => !dismissedAnswers.has(k)) : [];
+    const show = showQ || pendingA.length > 0;
     document.body.classList.toggle('has-banner', show);
-    if (!show) { el.hidden = true; el.innerHTML = ''; return; }
-    if (!el.hidden && el.dataset.q === q.id) return;
-    el.hidden = false; el.dataset.q = q.id;
-    el.innerHTML = `<div class="banner" role="status"><span>Question ${q.n} is now open: ${esc(q.title)}.</span>
-      <a class="btn small" href="#${esc(q.id)}">Go to question ${q.n}</a>
-      <button class="linkbtn" type="button" id="bannerx">Dismiss</button></div>`;
-    $('bannerx').onclick = () => { bannerFor = null; renderBanner(); };
+    if (!show) { el.hidden = true; el.innerHTML = ''; el.dataset.key = ''; return; }
+    const key = showQ ? 'q:' + q.id : 'a:' + pendingA.join(',');
+    if (!el.hidden && el.dataset.key === key) return;
+    el.hidden = false; el.dataset.key = key;
+    if (showQ) {
+      el.innerHTML = `<div class="banner" role="status"><span>Question ${q.n} is now open: ${esc(q.title)}.</span>
+        <a class="btn small" href="#${esc(q.id)}">Go to question ${q.n}</a>
+        <button class="linkbtn" type="button" id="bannerx">Dismiss</button></div>`;
+      $('bannerx').onclick = () => { bannerFor = null; renderBanner(); };
+    } else {
+      const ownIds = new Set(view.asks.own.map(a => a.id));
+      const own = pendingA.some(k => ownIds.has(k.split(':')[0]));
+      el.innerHTML = `<div class="banner answer" role="status"><span>${own ? 'Your instructor answered your group’s question.' : `Your instructor shared an answer with seminar ${esc(view.group.seminar)}.`}</span>
+        <button class="btn small" type="button" id="bannerread">Read the answer</button>
+        <button class="linkbtn" type="button" id="bannerx">Dismiss</button></div>`;
+      $('bannerread').onclick = openAsk;
+      $('bannerx').onclick = () => { pendingA.forEach(k => dismissedAnswers.add(k)); renderBanner(); };
+    }
   }
+
+  // ------------------------------------------------------------ questions to the instructor
+  const seenKey = () => 'gv309-week9-seen-' + groupId;
+  const answerKeys = () => view ? [...view.asks.own, ...view.asks.shared].filter(a => a.answer).map(a => a.id + ':' + a.answer.at) : [];
+  function unseenAnswers() {
+    if (!view) return [];
+    const keys = answerKeys();
+    if (!seenAnswers) {
+      let stored = null;
+      try { stored = JSON.parse(localStorage.getItem(seenKey()) || 'null'); } catch (e) { /* storage unavailable */ }
+      // On a device that has not been here before, answers already given count as read.
+      seenAnswers = new Set(stored || keys);
+      if (!stored) saveSeen();
+    }
+    return keys.filter(k => !seenAnswers.has(k));
+  }
+  function saveSeen() { try { localStorage.setItem(seenKey(), JSON.stringify([...seenAnswers])); } catch (e) { /* ignore */ } }
+  function markAllSeen() {
+    const un = unseenAnswers();
+    if (!un.length) return;
+    un.forEach(k => { seenAnswers.add(k); freshAnswers.add(k); });
+    saveSeen();
+  }
+  function askStatus(msg, cls) { const el = $('askstatus'); el.textContent = msg; el.className = 'askstatus ' + (cls || ''); }
+  function setAskButtons() { $('asknamed').disabled = askPending; $('askanon').disabled = askPending; }
+  function openAsk() {
+    if (!view) return;
+    askOpen = true;
+    $('askpanel').hidden = false;
+    if (!askPending) askStatus('');
+    renderAskPanel();
+    const cur = hashPage();
+    if (qById(cur) && isVisible(qById(cur))) $('askabout').value = cur;
+    markAllSeen();
+    renderAskPanel(); renderBar(); renderBanner();
+    $('asktext').focus();
+  }
+  function closeAsk(returnFocus) {
+    if (!askOpen) return;
+    askOpen = false;
+    $('askpanel').hidden = true;
+    freshAnswers.clear(); askListCache = '';
+    if (view) { renderBar(); renderBanner(); }
+    if (returnFocus && $('askbtn')) $('askbtn').focus();
+  }
+  function sendAsk(anonymous) {
+    const text = $('asktext').value.trim();
+    if (!text) { askStatus('Type your question first.', 'pending'); $('asktext').focus(); return; }
+    if (!connected) { askStatus('You are offline. Send again when the connection returns; your question stays in the box.', 'pending'); return; }
+    askPending = true; setAskButtons();
+    askStatus('Sending…');
+    send({ type: 'ask', text, anonymous, about: $('askabout').value || null });
+  }
+  function aboutLabel(id) { const q = qById(id); return q ? `Question ${q.n}` : 'General'; }
+  function askItemHtml(a, own) {
+    const who = own ? (a.anonymous ? 'sent anonymously' : 'sent with your group’s name') : (a.from ? `asked by ${esc(a.from)}` : 'asked anonymously');
+    let h = `<article class="ask"><p class="askmeta">${esc(aboutLabel(a.about))}, ${who}, ${fmtTime(a.createdAt)}</p><p class="asktext">${esc(a.text)}</p>`;
+    if (!a.answer) {
+      h += `<p class="askwait">Waiting for an answer.${own ? ` <button class="linkbtn" type="button" data-withdraw="${esc(a.id)}">Withdraw</button>` : ''}</p>`;
+    } else {
+      const fresh = freshAnswers.has(a.id + ':' + a.answer.at) ? 'fresh' : '';
+      const to = own && a.shared ? ' to the whole seminar' : '';
+      h += a.answer.inClass
+        ? `<div class="note ${fresh}"><p class="who">Your instructor</p><div class="body">Answered in class.</div></div>`
+        : `<div class="note ${fresh}"><p class="who">Your instructor${to}, ${fmtTime(a.answer.at)}</p><div class="body">${esc(a.answer.text)}</div></div>`;
+    }
+    return h + '</article>';
+  }
+  function renderAskPanel() {
+    if (!askOpen || !view) return;
+    markAllSeen();
+    // The "About" menu lists the questions that are open or read-only.
+    const shown = view.questions.filter(isVisible);
+    const aboutKey = shown.map(q => q.id).join(',');
+    if (aboutKey !== askAboutKey) {
+      const sel = $('askabout'), keep = sel.value;
+      sel.innerHTML = shown.map(q => `<option value="${esc(q.id)}">Question ${q.n}: ${esc(q.title)}</option>`).join('') + '<option value="">Something else</option>';
+      sel.value = shown.some(q => q.id === keep) || keep === '' ? keep : (shown.length ? shown[shown.length - 1].id : '');
+      askAboutKey = aboutKey;
+    }
+    const a = view.asks;
+    let h = `<h3>Your group’s questions</h3>`;
+    h += a.own.length ? a.own.slice().reverse().map(x => askItemHtml(x, true)).join('') : `<p class="hint">None yet. Questions your group sends appear here, with your instructor’s answer.</p>`;
+    if (a.shared.length) h += `<h3>Answers shared with seminar ${esc(view.group.seminar)}</h3>` + a.shared.slice().reverse().map(x => askItemHtml(x, false)).join('');
+    if (h === askListCache) return;
+    askListCache = h;
+    $('asklist').innerHTML = h;
+    document.querySelectorAll('#asklist [data-withdraw]').forEach(b => b.onclick = () => {
+      if (confirm('Withdraw this question? Your instructor will no longer see it.')) send({ type: 'withdrawAsk', id: b.dataset.withdraw });
+    });
+  }
+  $('askclose').onclick = () => closeAsk(true);
+  $('asknamed').onclick = () => sendAsk(false);
+  $('askanon').onclick = () => sendAsk(true);
+  document.addEventListener('keydown', e => { if (e.key === 'Escape' && askOpen) closeAsk(true); });
 
   // ------------------------------------------------------------ render
   function render() {
@@ -187,6 +311,7 @@
     renderBar();
     const main = $('main');
     if (!groupId || !view) {
+      closeAsk(false);
       $('qnav').hidden = true; navHtml = ''; bannerFor = null; renderBanner(); wideLayout = false; $('wrap').classList.remove('wide');
       if (layoutKey === 'join') return;
       clearBindings(); layoutKey = 'join';
@@ -199,6 +324,7 @@
     const shown = isVisible(q) ? q.id : 'wait';
     reportPage(shown);
     renderNav(shown);
+    renderAskPanel();
     renderBanner();
     wideLayout = !!(isVisible(q) && q.table);
     $('wrap').classList.toggle('wide', wideLayout);
