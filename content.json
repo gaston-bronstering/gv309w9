@@ -1,0 +1,71 @@
+{
+  "title": "GV309 Week 9 – Seminar groups 3 and 4",
+  "subtitle": "Rules, discretion, central bank independence and democracy",
+  "seminars": ["3", "4"],
+  "blockPaste": true,
+  "intro": "Work through the questions in your group. Your instructor opens them one at a time. Everyone in your group can type in the same box at the same time, and your answers save as you type.",
+  "questions": [
+    {
+      "id": "q1",
+      "title": "Lohmann’s audiences",
+      "minutes": 25,
+      "prompt": [
+        "Lohmann argues that a commitment is credible only if it is attached to an audience that can and will punish a defection. Fill in the table for the ideal audience she describes and for three of the audiences she names.",
+        "Draw on Lohmann whenever possible. Where she does not discuss a matter explicitly, apply your own reasoning. Consider each of these kinds of commitment. If your answer differs depending on the commitment, give each answer, using the numbers below."
+      ],
+      "legend": [
+        "Central bank independence in general",
+        "An exchange-rate peg",
+        "A monetary target",
+        "An inflation target"
+      ],
+      "table": {
+        "corner": "Audience",
+        "rows": [
+          { "id": "ideal", "label": "‘Ideal audience’" },
+          { "id": "voters", "label": "Voters" },
+          { "id": "wages", "label": "Wage setters" },
+          { "id": "markets", "label": "Financial markets" }
+        ],
+        "columns": [
+          { "id": "cost", "label": "Character and magnitude of the trigger-punishment cost it can impose", "short": "Punishment cost" },
+          { "id": "sens", "label": "Sensitivity to defections, and to subtle exculpatory factors on which punishment may be contingent", "short": "Sensitivity" },
+          { "id": "coord", "label": "What ensures that the response to a defection is coordinated (carried out by a sufficient number of audience members)?", "short": "Coordination", "note": "Lohmann does not address this directly, so apply your own reasoning." }
+        ],
+        "fixed": {
+          "ideal.coord": "Not applicable to this audience."
+        }
+      }
+    },
+    {
+      "id": "q2",
+      "title": "The balance sheet and the fiscal carve-out",
+      "parts": [
+        { "id": "examples", "short": "Two examples", "label": "Give two examples from Tucker of **ways central bank actions during the financial crisis changed the state’s consolidated balance sheet**." },
+        { "id": "carveout", "short": "Fiscal carve-out", "label": "Give an account of what you think he means by a ‘**fiscal carve-out**’ (p. 27)." }
+      ]
+    },
+    {
+      "id": "q3",
+      "title": "Rules and the environment they work in",
+      "prompt": [
+        "In lecture, DW gave the example of a Roomba encountering a gross substance and spreading it across a space it was supposed to be cleaning. The example illustrated the idea that **if rules are to give good outcomes reliably, the environment in which they are applied must be made predictable**."
+      ],
+      "parts": [
+        { "id": "a", "letter": "a", "short": "a. Metaphor", "rows": 4, "label": "Come up with a less repulsive metaphor that expresses the same idea." },
+        { "id": "b", "letter": "b", "short": "b. Perverse effects", "label": "Give some examples of rules on what the central bank is mandated to do or prohibited from doing that gave rise, or threatened to give rise, to perverse effects because of the environment in which they were applied." },
+        { "id": "c", "letter": "c", "short": "c. Tucker’s proposals", "label": "To what extent can your more palatable metaphor be used to **explain Tucker’s proposals on the financial system** (for instance, as part of the money-credit constitution on p. 8) **and on fiscal policy** (pp. 23–24, 25–28)? Does it make a difference that the environment in which central banks operate is not inert, but shaped by what fiscal authorities and actors in the financial system expect the central bank to do?" }
+      ]
+    },
+    {
+      "id": "q4",
+      "title": "Democracy first?",
+      "prompt": ["Consider this quotation."],
+      "quote": "‘The apparent incommensurability between majoritarian control and commitment technologies turns out to be no more than a specter. Democracy comes first, and can choose commitment technologies for improving aggregate welfare if it wishes.’ (Tucker 2016, 11)",
+      "parts": [
+        { "id": "tucker", "short": "In light of Tucker", "label": "Do you agree with this argument in light of Tucker’s proposals?" },
+        { "id": "lohmann", "short": "Lohmann’s technologies", "label": "Would the same claim be true of the commitment technologies Lohmann discusses?" }
+      ]
+    }
+  ]
+}
